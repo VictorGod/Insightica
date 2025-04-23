@@ -21,11 +21,11 @@ def marketplace_keyboard() -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="Парсинг категории Wildberries", callback_data="parse_wb_category")],
         [types.InlineKeyboardButton(text="Парсинг категории Ozon",        callback_data="parse_ozon_category")],
-        [types.InlineKeyboardButton(text="Информация о товаре WB",      callback_data="parse_wb_product")],
-        [types.InlineKeyboardButton(text="Информация о товаре Ozon",    callback_data="parse_ozon_product")],
+        #[types.InlineKeyboardButton(text="Информация о товаре WB",      callback_data="parse_wb_product")],
+        #[types.InlineKeyboardButton(text="Информация о товаре Ozon",    callback_data="parse_ozon_product")],
         [types.InlineKeyboardButton(text="Анализ цен из CSV",          callback_data="analyze_prices")],
-        [types.InlineKeyboardButton(text="Мониторинг цен",             callback_data="price_monitoring")],
-        [types.InlineKeyboardButton(text="Помощь",                      callback_data="help")],
+        #[types.InlineKeyboardButton(text="Мониторинг цен",             callback_data="price_monitoring")],
+        #[types.InlineKeyboardButton(text="Помощь",                      callback_data="help")],
     ])
 
 @dp.message(Command("start"))

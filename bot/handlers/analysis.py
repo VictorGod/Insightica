@@ -32,19 +32,23 @@ def load_last_dataframe() -> pd.DataFrame | None:
         try:
             return (
                 pd.read_excel(_last_uploaded, sheet_name=0)
-                if _last_uploaded.suffix.lower() == ".xlsx"
+                if _last_uploaded.suffix.lower() in (".xlsx", ".xls")
                 else pd.read_csv(_last_uploaded)
             )
         except Exception:
             return None
 
     # fallback: самый свежий файл в папке
-    files = list(CSV_DIR.glob("*.xlsx")) + list(CSV_DIR.glob("*.csv"))
+    files = list(CSV_DIR.glob("*.xlsx")) + list(CSV_DIR.glob("*.xls")) + list(CSV_DIR.glob("*.csv"))
     if not files:
         return None
     last = max(files, key=lambda f: f.stat().st_mtime)
     try:
-        return pd.read_excel(last, sheet_name=0) if last.suffix.lower() == ".xlsx" else pd.read_csv(last)
+        return (
+            pd.read_excel(last, sheet_name=0)
+            if last.suffix.lower() in (".xlsx", ".xls")
+            else pd.read_csv(last)
+        )
     except Exception:
         return None
 
@@ -52,14 +56,14 @@ def load_last_dataframe() -> pd.DataFrame | None:
 @dp.callback_query(lambda c: c.data == 'analyze_prices')
 async def handle_analyze_prices(callback_query: types.CallbackQuery):
     await callback_query.message.answer(
-        "🛠 Пришлите CSV/XLSX и, если хотите, сразу укажите в подписи команду:\n"
-        "  /summary   — заполненность полей\n"
+        "🛠 Пришлите CSV/XLS/XLSX и, если хотите, сразу укажите в подписи команду:\n"
+        "  /summary   — заполненность полей\n"
         "  /price_hist— распределение цен\n"
-        "  /discount  — распределение скидок\n"
-        "  /chars     — топ‑15 характеристик\n"
-        "  /compare   — сравнение по категориям\n"
-        "  /margin    — маржинальность\n"
-        "  /flow      — динамика отзывов"
+        "  /discount  — распределение скидок\n"
+        "  /chars     — топ-15 характеристик\n"
+        "  /compare   — сравнение по категориям\n"
+        "  /margin    — маржинальность\n"
+        "  /flow      — динамика отзывов"
     )
     await callback_query.answer()
 
@@ -69,8 +73,8 @@ async def handle_file_upload(message: types.Message):
     global _last_uploaded
     doc = message.document
     ext = Path(doc.file_name or "").suffix.lower()
-    if ext not in (".csv", ".xlsx"):
-        return await message.reply("❌ Поддерживаются только .csv и .xlsx")
+    if ext not in (".csv", ".xlsx", ".xls"):
+        return await message.reply("❌ Поддерживаются только файлы .csv, .xls и .xlsx")
     dest = CSV_DIR / f"{doc.file_id}{ext}"
     tg_file = await message.bot.get_file(doc.file_id)
     await message.bot.download_file(tg_file.file_path, destination=dest)
@@ -97,7 +101,7 @@ async def handle_file_upload(message: types.Message):
 async def cmd_summary_report(message: types.Message):
     df = load_last_dataframe()
     if df is None:
-        return await message.reply("❌ Нет данных. Пришлите CSV/XLSX.")
+        return await message.reply("❌ Нет данных. Пришлите CSV/XLS/XLSX.")
     total = len(df)
     miss = lambda col: df[col].isna().sum() / total * 100 if col in df else 0
     stats = {
@@ -109,7 +113,7 @@ async def cmd_summary_report(message: types.Message):
         "% без rating": miss("rating"),
         "% без reviews": miss("reviews"),
     }
-    text = "\n".join(f"{k}: {v:.1f} %" for k, v in stats.items())
+    text = "\n".join(f"{k}: {v:.1f} %" for k, v in stats.items())
     await message.reply(f"📊 *Сводка по данным*\n\n{text}", parse_mode="Markdown")
 
 
@@ -153,7 +157,7 @@ async def cmd_characteristics_freq(message: types.Message):
         if isinstance(props, dict):
             counter.update(props.keys())
     text = "\n".join(f"{k}: {v}" for k, v in counter.most_common(15))
-    await message.reply(f"📋 *Топ‑15 характеристик*\n\n{text}", parse_mode="Markdown")
+    await message.reply(f"📋 *Топ-15 характеристик*\n\n{text}", parse_mode="Markdown")
 
 
 @dp.message(Command("compare"))
@@ -163,8 +167,10 @@ async def cmd_compare(message: types.Message):
         return await message.reply("❌ Требуются поля category и price_clean.")
     top5 = df.groupby("category")["price_clean"].mean().nlargest(5)
     lines = [f"{i+1}. {cat[:30]}… — {val:.2f}" for i, (cat, val) in enumerate(top5.items())]
-    await message.reply("🏷 *Топ‑5 категорий по средней цене:*\n\n" + "\n".join(lines),
-                        parse_mode="Markdown")
+    await message.reply(
+        "🏷 *Топ-5 категорий по средней цене:*\n\n" + "\n".join(lines),
+        parse_mode="Markdown"
+    )
 
 
 @dp.message(Command("margin"))
@@ -173,7 +179,10 @@ async def cmd_margin(message: types.Message):
     if df is None or "cost" not in df or "price_clean" not in df:
         return await message.reply("❌ Требуются поля cost и price_clean.")
     df = df.copy()
-    df["margin_pct"] = (df["price_clean"] - pd.to_numeric(df["cost"], errors="coerce")) / df["price_clean"] * 100
+    df["margin_pct"] = (
+        df["price_clean"] -
+        pd.to_numeric(df["cost"], errors="coerce")
+    ) / df["price_clean"] * 100
     df["margin_pct"].dropna().hist(bins=30)
     plt.title("Маржинальность (%)")
     plt.xlabel("Маржа %"); plt.ylabel("Частота"); plt.grid(alpha=0.3)
@@ -192,7 +201,8 @@ async def cmd_flow(message: types.Message):
     daily = df.groupby("date")["reviews"].sum()
     plt.figure(figsize=(8, 4))
     daily.plot(marker="o")
-    plt.title("Динамика отзывов"); plt.xlabel("Дата"); plt.ylabel("Сумма reviews"); plt.grid(alpha=0.3)
+    plt.title("Динамика отзывов")
+    plt.xlabel("Дата"); plt.ylabel("Сумма reviews"); plt.grid(alpha=0.3)
     out = REPORTS_DIR / "flow.png"
     plt.tight_layout(); plt.savefig(out); plt.close()
     await message.reply_photo(FSInputFile(path=out), caption="📈 Динамика отзывов")
