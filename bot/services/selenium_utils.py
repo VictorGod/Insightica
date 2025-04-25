@@ -27,12 +27,8 @@ def get_webdriver():
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_argument("--disable-extensions")
 
-    # Указываем путь к системному Chromium
+    # Явно указываем путь к системному Chromium (если нужно)
     opts.binary_location = "/usr/bin/chromium"
-
-    # Проксирование через локальный SOCKS5
-    proxy = random.choice(PROXIES)
-    opts.add_argument(f"--proxy-server={proxy}")
 
     # Используем системный chromedriver
     service = Service("/usr/bin/chromedriver")
