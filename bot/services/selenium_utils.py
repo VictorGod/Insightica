@@ -13,31 +13,30 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
-from ..config import get_selenium_config, get_marketplace_config
+from ..config import get_selenium_config, get_marketplace_config, PROXIES
 
 logger = logging.getLogger(__name__)
 
 def get_webdriver():
-    cfg = get_selenium_config()
     opts = Options()
-    if cfg.get("headless"):
-        opts.add_argument("--headless")
-    opts.add_argument(f"user-agent={random.choice(cfg.get('user_agents', []))}")
-    for arg in (
-        "--disable-extensions",
-        "--disable-gpu",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled"
-    ):
-        opts.add_argument(arg)
-    if cfg.get("proxies"):
-        opts.add_argument(f"--proxy-server={random.choice(cfg['proxies'])}")
+    # headless + базовые флаги
+    opts.add_argument("--headless")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument("--disable-extensions")
+
+    # направляем всё через локальный SOCKS5-прокси
+    proxy = random.choice(PROXIES)
+    opts.add_argument(f"--proxy-server={proxy}")
+
+    # инициализируем Chrome (chromedriver из образа)
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
         options=opts
     )
-    driver.set_page_load_timeout(cfg.get("page_load_timeout", 30))
+    driver.set_page_load_timeout(30)
     return driver
 
 def capture_screenshot(driver, name: str) -> str:
