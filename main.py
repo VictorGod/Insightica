@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 from aiogram import Bot
 from bot.handlers.commands import dp
 
+# -----------------------
 # Загрузка .env
+# -----------------------
 load_dotenv()
 TG_BOT_TOKEN   = os.getenv("TG_BOT_TOKEN")
 RENDER_PORT    = int(os.getenv("PORT", 8000))
@@ -26,6 +28,9 @@ SS_LOCAL_PORT  = os.getenv("SS_LOCAL_PORT", "1080")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# -----------------------
+# HTTP health-check для Render
+# -----------------------
 def run_health_server():
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -36,10 +41,10 @@ def run_health_server():
 
 if __name__ == "__main__":
     # Проверяем наличие ss-local
-    if not shutil.which("ss-local"):
-        logger.error("ss-local не найден! shadowsocks-libev не установлен?")
+    if not shutil.which("/usr/bin/ss-local"):
+        logger.error("ss-local не найден в /usr/bin. shadowsocks-libev должен быть установлен.")
     else:
-        # Проверяем переменные
+        # Проверяем переменные окружения
         missing = [k for k,v in {
             "SS_SERVER": SS_SERVER,
             "SS_SERVER_PORT": SS_SERVER_PORT,
@@ -50,8 +55,9 @@ if __name__ == "__main__":
             logger.error("Пропущены переменные %s — ss-local не запустится", missing)
         else:
             logger.info("Запускаем ss-local (Shadowsocks) …")
+            # Вызов по абсолютному пути устраняет возможные проблемы PATH
             subprocess.Popen([
-                "ss-local",
+                "/usr/bin/ss-local",
                 "-s", SS_SERVER,
                 "-p", SS_SERVER_PORT,
                 "-k", SS_PASSWORD,
@@ -60,11 +66,11 @@ if __name__ == "__main__":
             ])
             time.sleep(2)  # даём прокси подняться
 
-    # Health-check для Render
+    # Старт health-check
     Thread(target=run_health_server, daemon=True).start()
     logger.info("Health-check слушает порт %s", RENDER_PORT)
 
-    # Старт бота
+    # Запуск Telegram long polling
     logger.info("Старт long polling…")
     bot = Bot(token=TG_BOT_TOKEN)
     asyncio.run(dp.start_polling(bot))
