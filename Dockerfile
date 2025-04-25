@@ -1,7 +1,7 @@
 FROM python:3.10-slim-buster
 WORKDIR /usr/src/app
 
-# 1) Устанавливаем системные зависимости, shadowsocks-libev и совместимый Chromium/Driver
+# Устанавливаем системные зависимости, Shadowsocks-libev и Chromium/ChromeDriver
 RUN apt-get update && \
     apt-get install -y \
       build-essential \
@@ -20,16 +20,16 @@ RUN apt-get update && \
       xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# 2) Делаем бинарь ss-local явно исполняемым и убеждаемся, что работаем от root
-RUN chmod +x /usr/bin/ss-local
-USER root
-
-# 3) Копируем проект
+# Копируем код и скрипт запуска
 COPY . /usr/src/app/
+COPY start.sh /usr/src/app/start.sh
 
-# 4) Устанавливаем Python-зависимости
+# Делаем скрипт исполняемым
+RUN chmod +x /usr/src/app/start.sh
+
+# Устанавливаем Python-зависимости
 RUN pip install --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt
 
-# 5) Запускаем main.py
-CMD ["python", "main.py"]
+# Запускаем entrypoint
+ENTRYPOINT ["/usr/src/app/start.sh"]
