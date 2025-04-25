@@ -1,11 +1,30 @@
 version: '3.8'
 
 services:
-  bot:
-    build: .
-    command: python main.py
-    volumes:
-      - .:/usr/src/app
+  # Прокси-sidecar: запускает ss-local из официального образа
+  proxy:
+    image: teddysun/shadowsocks-libev
+    command: >
+      ss-local
+      -s ${SS_SERVER}
+      -p ${SS_SERVER_PORT}
+      -k ${SS_PASSWORD}
+      -m ${SS_METHOD}
+      -l 1080
     env_file:
       - .env
+    restart: always
+
+  # Ваш бот
+  bot:
+    build: .
+    depends_on:
+      - proxy
+    env_file:
+      - .env
+    environment:
+      # Selenium будет брать прокси отсюда
+      - PROXIES=socks5://proxy:1080
+    volumes:
+      - .:/usr/src/app
     restart: always
