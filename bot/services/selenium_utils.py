@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def get_webdriver():
     opts = Options()
-    # headless + базовые флаги
+    # Headless и основные флаги
     opts.add_argument("--headless")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
@@ -27,15 +27,16 @@ def get_webdriver():
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_argument("--disable-extensions")
 
-    # направляем всё через локальный SOCKS5-прокси
+    # Указываем путь к системному Chromium
+    opts.binary_location = "/usr/bin/chromium"
+
+    # Проксирование через локальный SOCKS5
     proxy = random.choice(PROXIES)
     opts.add_argument(f"--proxy-server={proxy}")
 
-    # инициализируем Chrome (chromedriver из образа)
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=opts
-    )
+    # Используем системный chromedriver
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=opts)
     driver.set_page_load_timeout(30)
     return driver
 
