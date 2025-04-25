@@ -1,35 +1,35 @@
 import os
 import asyncio
 import logging
-from dotenv import load_dotenv
-from aiogram import Bot
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from bot.handlers.commands import dp
 
-# Загрузка переменных из .env
+from dotenv import load_dotenv
+from aiogram import Bot
+from bot.handlers.commands import dp  # ваш диспетчер aiogram
+
+# Загрузка переменных окружения из .env
 load_dotenv()
-TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-RENDER_PORT  = int(os.getenv("PORT", 8000))
 
-# Логирование
+# Инициализация бота
+bot = Bot(token=os.getenv("TG_BOT_TOKEN"))
+
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def run_health_server():
+    port = int(os.environ.get("PORT", 8000))
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
+            # любой GET на корень отдаёт 200 OK
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
-    HTTPServer(("0.0.0.0", RENDER_PORT), HealthHandler).serve_forever()
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+# Запускаем HTTP-сервер в демон-потоке
+Thread(target=run_health_server, daemon=True).start()
 
 if __name__ == "__main__":
-    # Старт health-check
-    Thread(target=run_health_server, daemon=True).start()
-    logger.info(f"Health-check listening on port {RENDER_PORT}")
-
-    # Старт polling у бота
-    logger.info("Starting Telegram long polling…")
-    bot = Bot(token=TG_BOT_TOKEN)
     asyncio.run(dp.start_polling(bot))

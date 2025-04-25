@@ -9,9 +9,7 @@ import json
 load_dotenv()
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 
-# Локальный SOCKS5-прокси, который поднимает main.py через ss-local
-# Список прокси для Selenium, разделённый запятыми
-PROXIES = os.getenv("PROXIES", "").split(",")
+
 
 def get_selenium_config():
     """Общие настройки Selenium + Chrome."""

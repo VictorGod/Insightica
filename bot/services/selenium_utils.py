@@ -13,32 +13,31 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
-from ..config import get_selenium_config, get_marketplace_config, PROXIES
+from ..config import get_selenium_config, get_marketplace_config
 
 logger = logging.getLogger(__name__)
 
 def get_webdriver():
+    cfg = get_selenium_config()
     opts = Options()
-    # Запуск в headless, основные флаги безопасности
-    opts.add_argument("--headless")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_argument("--disable-extensions")
-
-    # Проксирование через sidecar: proxy:1080
-    if PROXIES:
-        proxy = random.choice(PROXIES)
-        logger.info(f"Using proxy: {proxy}")
-        opts.add_argument(f"--proxy-server={proxy}")
-
-    # Указываем системный Chromium и Chromedriver
-    opts.binary_location = "/usr/bin/chromium"
-    service = Service("/usr/bin/chromedriver")
-
-    driver = webdriver.Chrome(service=service, options=opts)
-    driver.set_page_load_timeout(30)
+    if cfg.get("headless"):
+        opts.add_argument("--headless")
+    opts.add_argument(f"user-agent={random.choice(cfg.get('user_agents', []))}")
+    for arg in (
+        "--disable-extensions",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled"
+    ):
+        opts.add_argument(arg)
+    if cfg.get("proxies"):
+        opts.add_argument(f"--proxy-server={random.choice(cfg['proxies'])}")
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=opts
+    )
+    driver.set_page_load_timeout(cfg.get("page_load_timeout", 30))
     return driver
 
 def capture_screenshot(driver, name: str) -> str:
