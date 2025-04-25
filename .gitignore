@@ -1,4 +1,4 @@
 venv/
 .env
-echo "__pycache__/" 
-echo "*.pyc"
+__pycache__/
+*.pyc

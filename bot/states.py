@@ -5,11 +5,12 @@ class MarketplaceForm(StatesGroup):
     # Состояния для WildBerries
     waiting_for_wb_category_url = State()
     waiting_for_wb_product_url = State()
-    waiting_for_item_count = State() 
+    waiting_for_wb_item_count = State() 
     
     # Состояния для Ozon
     waiting_for_ozon_category_url = State()
     waiting_for_ozon_product_url = State()
+    waiting_for_ozon_item_count = State()
     
     # Состояния для анализа цен
     waiting_for_csv_choice = State()
@@ -21,6 +22,8 @@ class MarketplaceForm(StatesGroup):
     # Общие состояния
     processing = State()
     waiting_for_command = State()
+
+    
 
 class Form(StatesGroup):
     waiting_for_url = State()

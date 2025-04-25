@@ -1,23 +1,35 @@
+import os
 import asyncio
 import logging
-import os
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Bot
+from bot.handlers.commands import dp  # ваш диспетчер aiogram
 
-# Load environment variables
+# Загрузка переменных окружения из .env
 load_dotenv()
 
-# Initialize the bot and dispatcher
+# Инициализация бота
 bot = Bot(token=os.getenv("TG_BOT_TOKEN"))
-dp = Dispatcher(storage=MemoryStorage())
 
-# Configure logging
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
-# Import handlers after initializing Dispatcher
-from bot.handlers import dp  
+def run_health_server():
+    port = int(os.environ.get("PORT", 8000))
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            # любой GET на корень отдаёт 200 OK
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+# Запускаем HTTP-сервер в демон-потоке
+Thread(target=run_health_server, daemon=True).start()
 
 if __name__ == "__main__":
     asyncio.run(dp.start_polling(bot))
