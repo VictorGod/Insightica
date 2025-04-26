@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       
       # Настройка .env файла из секретов
       - name: Create .env file
@@ -24,7 +24,7 @@ jobs:
       
       # Сборка и пуш Docker образа
       - name: Build and Push Docker Image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         with:
           context: .
           push: true
@@ -44,7 +44,8 @@ jobs:
           revision-memory: 512Mb
           revision-concurrency: 1
           revision-execution-timeout: 600s
-          revision-environment: |
+          # Исправленный параметр для переменных окружения
+          revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             # Дополнительные переменные окружения при необходимости
             # PROXIES=socks5://proxy:1080
