@@ -7,25 +7,21 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-${{ github.ref }}
-      cancel-in-progress: true
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+      
       # Настройка .env файла из секретов
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
-
-      # Логин в Yandex Container Registry
+      
+      # Логин в Yandex Container Registry используя рекомендованный action
       - name: Login to Yandex Container Registry
         uses: yc-actions/yc-cr-login@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
-
+      
       # Сборка и пуш Docker образа
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
@@ -33,8 +29,8 @@ jobs:
           context: .
           push: true
           tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
-
-      # Деплой в Serverless Containers с логированием
+      
+      # Деплой в Serverless Containers используя v2 и правильные параметры
       - name: Deploy to Serverless Containers
         uses: yc-actions/yc-sls-container-deploy@v2
         with:
@@ -50,32 +46,3 @@ jobs:
           revision-execution-timeout: 600s
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-          revision-log-options-disabled: 'false'
-          revision-log-options-min-level: info
-
-      # Устанавливаем YC CLI для чтения логов
-      - name: Install Yandex Cloud CLI
-        run: |
-          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-          sudo mv yc /usr/local/bin/
-
-      - name: Configure Yandex Cloud CLI
-        run: |
-          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
-
-      # Считываем логи за последний час
-      - name: Fetch Service Logs
-        run: |
-          yc logging read \
-            --group-name default \
-            --since "$(date --utc --date='1 hour ago' +'%Y-%m-%dT%H:%M:%SZ')" \
-            --format json > service-logs.json
-          echo "=== Service logs (last hour) ==="
-          cat service-logs.json
-
-      # Загружаем логи как артефакт (версия v4)
-      - name: Upload logs as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: service-logs
-          path: service-logs.json
