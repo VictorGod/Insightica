@@ -1,0 +1,50 @@
+name: Deploy to Yandex Cloud Serverless Containers
+
+on:
+  push:
+    branches: [ work ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+      # Настройка .env файла из секретов
+      - name: Create .env file
+        run: |
+          echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+      
+      # Логин в Yandex Container Registry используя рекомендованный action
+      - name: Login to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@v1
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+      
+      # Сборка и пуш Docker образа
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
+      
+      # Деплой в Serverless Containers используя v2 и правильные параметры
+      - name: Deploy to Serverless Containers
+        uses: yc-actions/yc-sls-container-deploy@v2
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+          container-name: insightica-bot
+          folder-id: ${{ secrets.YC_FOLDER_ID }}
+          revision-service-account-id: ${{ secrets.YC_VM_SERVICE_ACCOUNT_ID }}
+          revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
+          revision-cores: 1
+          revision-core-fraction: 100
+          revision-memory: 512Mb
+          revision-concurrency: 1
+          revision-execution-timeout: 600s
+          revision-environment: |
+            TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
+            # Дополнительные переменные окружения при необходимости
+            # PROXIES=socks5://proxy:1080
