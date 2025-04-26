@@ -1,3 +1,4 @@
+# .github/workflows/deploy-to-yc.yml
 name: Deploy to Yandex Cloud Serverless Containers
 
 on:
@@ -7,21 +8,25 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: true
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       # Настройка .env файла из секретов
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
-      
-      # Логин в Yandex Container Registry используя рекомендованный action
+
+      # Логин в Yandex Container Registry
       - name: Login to Yandex Container Registry
         uses: yc-actions/yc-cr-login@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
-      
+
       # Сборка и пуш Docker образа
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
@@ -29,8 +34,8 @@ jobs:
           context: .
           push: true
           tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
-      
-      # Деплой в Serverless Containers используя v2 и правильные параметры
+
+      # Деплой в Serverless Containers с логированием
       - name: Deploy to Serverless Containers
         uses: yc-actions/yc-sls-container-deploy@v2
         with:
@@ -46,3 +51,37 @@ jobs:
           revision-execution-timeout: 600s
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
+          # Включаем сбор логов в default-группу Yandex.Cloud
+          revision-log-options-disabled: 'false'
+          # Если хотите явно указать default, можно получить его ID командой yc logging group list
+          # и подставить в secrets.YC_LOG_GROUP_ID. Но по умолчанию логи пойдут в default без этого.
+          #revision-log-options-folder-id: ${{ secrets.YC_FOLDER_ID }}
+          #revision-log-options-log-group-id: ${{ secrets.YC_LOG_GROUP_ID }}
+          revision-log-options-min-level: info
+
+      # Устанавливаем YC CLI для чтения логов
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          sudo mv yc /usr/local/bin/
+
+      - name: Configure Yandex Cloud CLI
+        run: |
+          yc config set folder-id ${{ secrets.YC_FOLDER_ID }}
+
+      # Считываем логи за последний час
+      - name: Fetch Service Logs
+        run: |
+          yc logging read \
+            --group-name default \
+            --since "$(date --utc --date='1 hour ago' +'%Y-%m-%dT%H:%M:%SZ')" \
+            --format json > service-logs.json
+          echo "=== Service logs (last hour) ==="
+          cat service-logs.json
+
+      # Загружаем логи как артефакт
+      - name: Upload logs as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: service-logs
+          path: service-logs.json
