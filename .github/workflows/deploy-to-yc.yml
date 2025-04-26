@@ -1,4 +1,3 @@
-# .github/workflows/deploy-to-yc.yml
 name: Deploy to Yandex Cloud Serverless Containers
 
 on:
@@ -51,12 +50,7 @@ jobs:
           revision-execution-timeout: 600s
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-          # Включаем сбор логов в default-группу Yandex.Cloud
           revision-log-options-disabled: 'false'
-          # Если хотите явно указать default, можно получить его ID командой yc logging group list
-          # и подставить в secrets.YC_LOG_GROUP_ID. Но по умолчанию логи пойдут в default без этого.
-          #revision-log-options-folder-id: ${{ secrets.YC_FOLDER_ID }}
-          #revision-log-options-log-group-id: ${{ secrets.YC_LOG_GROUP_ID }}
           revision-log-options-min-level: info
 
       # Устанавливаем YC CLI для чтения логов
@@ -79,9 +73,9 @@ jobs:
           echo "=== Service logs (last hour) ==="
           cat service-logs.json
 
-      # Загружаем логи как артефакт
+      # Загружаем логи как артефакт (версия v4)
       - name: Upload logs as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: service-logs
           path: service-logs.json
