@@ -44,8 +44,5 @@ jobs:
           revision-memory: 512Mb
           revision-concurrency: 1
           revision-execution-timeout: 600s
-          # Исправленный параметр для переменных окружения
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-            # Дополнительные переменные окружения при необходимости
-            # PROXIES=socks5://proxy:1080
