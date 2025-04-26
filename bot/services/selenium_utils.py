@@ -20,9 +20,12 @@ logger = logging.getLogger(__name__)
 def get_webdriver():
     cfg = get_selenium_config()
     opts = Options()
+    
     if cfg.get("headless"):
         opts.add_argument("--headless")
+    
     opts.add_argument(f"user-agent={random.choice(cfg.get('user_agents', []))}")
+    
     for arg in (
         "--disable-extensions",
         "--disable-gpu",
@@ -31,14 +34,66 @@ def get_webdriver():
         "--disable-blink-features=AutomationControlled"
     ):
         opts.add_argument(arg)
+    
     if cfg.get("proxies"):
         opts.add_argument(f"--proxy-server={random.choice(cfg['proxies'])}")
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=opts
-    )
-    driver.set_page_load_timeout(cfg.get("page_load_timeout", 30))
-    return driver
+    
+    # Определение пути к ChromeDriver (для контейнеров)
+    chrome_driver_path = os.environ.get("CHROME_DRIVER_PATH")
+    
+    max_attempts = cfg.get("max_driver_attempts", 3)
+    current_attempt = 0
+    last_exception = None
+    
+    while current_attempt < max_attempts:
+        try:
+            current_attempt += 1
+            
+            # Создание драйвера
+            if chrome_driver_path and os.path.exists(chrome_driver_path):
+                driver = webdriver.Chrome(
+                    service=Service(executable_path=chrome_driver_path),
+                    options=opts
+                )
+            else:
+                driver = webdriver.Chrome(
+                    service=Service(ChromeDriverManager().install()),
+                    options=opts
+                )
+            
+            driver.set_page_load_timeout(cfg.get("page_load_timeout", 30))
+            
+            # Внутренняя проверка готовности драйвера
+            try:
+                test_url = cfg.get("test_url", "https://www.example.com")
+                driver.get(test_url)
+                # Проверка загрузилась ли страница
+                _ = driver.title  # Вызовет исключение, если драйвер не готов
+                
+                # Если мы дошли сюда, значит драйвер работает корректно
+                if current_attempt > 1:
+                    print(f"WebDriver успешно инициализирован с {current_attempt} попытки")
+                
+                return driver
+                
+            except Exception as e:
+                # Что-то пошло не так при загрузке тестовой страницы
+                print(f"Ошибка при проверке драйвера: {str(e)}")
+                try:
+                    driver.quit()
+                except:
+                    pass
+                
+                last_exception = e
+                continue
+                
+        except Exception as e:
+            print(f"Ошибка при создании драйвера (попытка {current_attempt}/{max_attempts}): {str(e)}")
+            last_exception = e
+            time.sleep(1)  # Небольшая пауза перед следующей попыткой
+    
+    # Если все попытки не удались, вызываем исключение
+    raise RuntimeError(f"Не удалось инициализировать WebDriver после {max_attempts} попыток. Последняя ошибка: {str(last_exception)}")
 
 def capture_screenshot(driver, name: str) -> str:
     screenshots_dir = get_selenium_config().get("screenshots_dir", "screenshots")
