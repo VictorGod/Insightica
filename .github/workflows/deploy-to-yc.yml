@@ -7,33 +7,30 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Чекаут
       - name: Checkout code
         uses: actions/checkout@v3
-
-      # 2. Устанавливаем yc CLI
-      - name: Setup Yandex Cloud CLI
-        uses: nightstory/setup-yc@v1
-        with:
-          enable-cache: true
-
-      # 3. Логинимся в Container Registry (для docker push)
+      
+      # Настройка .env файла из секретов (если нужно)
+      - name: Create .env file
+        run: |
+          echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+      
+      # Логин в Yandex Container Registry
       - name: Login to Yandex Container Registry
-        uses: yc-actions/yc-cr-login@v2
+        uses: yc-actions/yc-cr-login@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
-
-      # 4. Сборка и пуш Docker-образа
+      
+      # Сборка и пуш Docker образа
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
-
-      # 5. Деплой в Serverless Containers
+      
+      # Деплой в Serverless Containers с переменными webhook
       - name: Deploy to Serverless Containers
         uses: yc-actions/yc-sls-container-deploy@v2
         with:
@@ -43,24 +40,42 @@ jobs:
           revision-service-account-id: ${{ secrets.YC_VM_SERVICE_ACCOUNT_ID }}
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
           revision-cores: 1
+          revision-core-fraction: 100
           revision-memory: 512Mb
           revision-concurrency: 1
           revision-execution-timeout: 600s
-          # Передаём в контейнер обе переменные, которые ждёт main.py
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-            WEBHOOK_HOST=${{ secrets.WEBHOOK_HOST }}
-            WEBHOOK_PATH=/webhook
-
-      # 6. Регистрация Telegram-вебхука
-      - name: Register Telegram Webhook
+            WEBHOOK_HOST=bba9mgrrav1hm9jcg23l.containers.yandexcloud.net
+            PORT=8080
+      
+      # Даем контейнеру время на запуск
+      - name: Wait for container to start
+        run: sleep 30
+      
+      # Устанавливаем webhook вручную после деплоя
+      - name: Set Telegram Webhook
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          WEBHOOK_HOST: ${{ secrets.WEBHOOK_HOST }}
-          WEBHOOK_PATH: /webhook
         run: |
-          WEBHOOK_URL="https://${WEBHOOK_HOST}${WEBHOOK_PATH}"
-          echo "Setting Telegram webhook to ${WEBHOOK_URL}"
-          curl -s -X POST \
+          WEBHOOK_HOST="bba9mgrrav1hm9jcg23l.containers.yandexcloud.net"
+          WEBHOOK_URL="https://${WEBHOOK_HOST}/webhook"
+          
+          echo "Checking container health..."
+          curl -v "https://${WEBHOOK_HOST}/" || echo "Container might still be starting"
+          
+          echo "Setting webhook to ${WEBHOOK_URL}..."
+          # Сначала удаляем любые существующие webhook
+          curl -s "https://api.telegram.org/bot${TG_BOT_TOKEN}/deleteWebhook"
+          
+          # Устанавливаем новый webhook
+          RESPONSE=$(curl -s -X POST \
             "https://api.telegram.org/bot${TG_BOT_TOKEN}/setWebhook" \
-            -F "url=${WEBHOOK_URL}"
+            -H "Content-Type: application/json" \
+            -d "{\"url\":\"${WEBHOOK_URL}\"}")
+          
+          echo "Webhook response: ${RESPONSE}"
+          
+          # Проверяем информацию о текущем webhook
+          INFO=$(curl -s "https://api.telegram.org/bot${TG_BOT_TOKEN}/getWebhookInfo")
+          echo "Webhook info: ${INFO}"
