@@ -36,7 +36,6 @@ jobs:
           revision-service-account-id: ${{ secrets.YC_VM_SERVICE_ACCOUNT_ID }}
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
           revision-cores: 1
-          revision-core-fraction: 100
           revision-memory: 512Mb
           revision-concurrency: 1
           revision-execution-timeout: 600s
@@ -44,7 +43,6 @@ jobs:
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             WEBHOOK_HOST=https://bba9mgrrav1hm9jcg23l.containers.yandexcloud.net
             WEBHOOK_PATH=/webhook
-            PORT=8443
 
       - name: Create or Update HTTP Trigger
         run: |
@@ -66,5 +64,5 @@ jobs:
             --folder-id ${{ secrets.YC_FOLDER_ID }} \
             --format json | jq -r '.url')
           curl -s \
-            -F "url=${TRIGGER_URL}${{ secrets.WEBHOOK_PATH }}" \
+            -F "url=${TRIGGER_URL}/webhook" \
             https://api.telegram.org/bot${TG_BOT_TOKEN}/setWebhook
