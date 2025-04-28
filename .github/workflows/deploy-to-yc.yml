@@ -30,7 +30,7 @@ jobs:
           push: true
           tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
       
-      # Деплой в Serverless Containers с переменными webhook
+      # Деплой в Serverless Containers
       - name: Deploy to Serverless Containers
         uses: yc-actions/yc-sls-container-deploy@v2
         with:
@@ -47,7 +47,6 @@ jobs:
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             WEBHOOK_HOST=bba9mgrrav1hm9jcg23l.containers.yandexcloud.net
-            PORT=8080
       
       # Даем контейнеру время на запуск
       - name: Wait for container to start
