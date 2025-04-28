@@ -28,10 +28,10 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add
     apt-get install -y --no-install-recommends google-chrome-stable && \
     rm -rf /var/lib/apt/lists/*
 
-# 3. Установка ChromeDriver
-RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) && \
+# 3. Установка ChromeDriver (используем полный номер версии)
+RUN FULL_VER=$(google-chrome --version | awk '{print $3}') && \
     wget -q -O /tmp/chromedriver.zip \
-      https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROME_VERSION}.0/linux64/chromedriver-linux64.zip && \
+      https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$FULL_VER/linux64/chromedriver-linux64.zip && \
     unzip /tmp/chromedriver.zip -d /tmp && \
     mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
     chmod +x /usr/local/bin/chromedriver && \
