@@ -21,30 +21,24 @@ logger = logging.getLogger(__name__)
 def get_webdriver():
     """
     Создаёт и возвращает настроенный Chrome WebDriver.
-    Поддерживает:
-    - headless=new режим
-    - базовые флаги для контейнера (--no-sandbox, --disable-dev-shm-usage и др.)
-    - случайный user-agent из cfg
-    - случайный прокси из cfg
-    - автоматические повторные попытки и тестовое обращение к test_url
+    Поддерживает headless=new, контейнерные флаги, user-agent, прокси и retry.
     """
-    # Загружаем конфиг Selenium (примерно из вашего get_selenium_config)
     cfg = get_selenium_config()
-    
-    # Параметры из конфига
-    headless = cfg.get("headless", True)
-    user_agents = cfg.get("user_agents", [])
-    proxies = cfg.get("proxies", [])
+    headless     = cfg.get("headless", True)
+    user_agents  = cfg.get("user_agents", [])
+    proxies      = cfg.get("proxies", [])
     max_attempts = cfg.get("max_driver_attempts", 3)
     page_timeout = cfg.get("page_load_timeout", 30)
-    test_url = cfg.get("test_url", "https://www.example.com")
+    test_url     = cfg.get("test_url", "https://www.example.com")
 
-    # Формируем опции Chrome
     opts = Options()
-    # Используем современный headless-режим
+    # Указываем путь к Chrome в контейнере:
+    chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
+    opts.binary_location = chrome_bin
+    # Современный headless-режим:
     if headless:
         opts.add_argument("--headless=new")
-    # Добавляем базовые флаги для контейнера
+    # Контейнерные флаги:
     for arg in (
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -53,38 +47,29 @@ def get_webdriver():
         "--disable-blink-features=AutomationControlled"
     ):
         opts.add_argument(arg)
-    # Случайный user-agent
+    # User-agent и прокси
     if user_agents:
         opts.add_argument(f"user-agent={random.choice(user_agents)}")
-    # Случайный прокси
     if proxies:
         opts.add_argument(f"--proxy-server={random.choice(proxies)}")
 
-    # Путь к ChromeDriver, если передан через переменную
     chrome_driver_path = os.environ.get("CHROME_DRIVER_PATH")
-
     last_exception = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            # Создаём сервис для драйвера
-            if chrome_driver_path and os.path.exists(chrome_driver_path):
-                service = Service(executable_path=chrome_driver_path)
-            else:
-                # Автоустановка через webdriver_manager
-                service = Service(ChromeDriverManager().install())
 
-            # Инициализация WebDriver
+    for attempt in range(1, max_attempts+1):
+        try:
+            service = (
+                Service(chrome_driver_path)
+                if chrome_driver_path and os.path.exists(chrome_driver_path)
+                else Service(ChromeDriverManager().install())
+            )
             driver = webdriver.Chrome(service=service, options=opts)
             driver.set_page_load_timeout(page_timeout)
-
-            # Тестовый запрос, чтобы убедиться, что браузер живой
             driver.get(test_url)
-            _ = driver.title  # обращение к title для полной загрузки страницы
-
+            _ = driver.title
             if attempt > 1:
                 print(f"[WebDriver] Инициализирован с попытки {attempt}")
             return driver
-
         except WebDriverException as e:
             print(f"[Attempt {attempt}/{max_attempts}] Ошибка WebDriver: {e}")
             last_exception = e
@@ -94,7 +79,6 @@ def get_webdriver():
                 pass
             time.sleep(1)
 
-    # Если не удалось ни разу
     raise RuntimeError(
         f"Не удалось инициализировать WebDriver после {max_attempts} попыток. "
         f"Последняя ошибка: {last_exception}"

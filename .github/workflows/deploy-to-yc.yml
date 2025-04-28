@@ -7,30 +7,26 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
-      # Настройка .env файла из секретов
+
       - name: Create .env file
-        run: |
-          echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
-      
-      # Логин в Yandex Container Registry используя рекомендованный action
+        run: echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+
       - name: Login to Yandex Container Registry
         uses: yc-actions/yc-cr-login@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
-      
-      # Сборка и пуш Docker образа
+
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
-      
-      # Деплой в Serverless Containers используя v2 и правильные параметры
+
       - name: Deploy to Serverless Containers
         uses: yc-actions/yc-sls-container-deploy@v2
         with:
@@ -46,3 +42,29 @@ jobs:
           revision-execution-timeout: 600s
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
+            WEBHOOK_HOST=https://bba9mgrrav1hm9jcg23l.containers.yandexcloud.net
+            WEBHOOK_PATH=/webhook
+            PORT=8443
+
+      - name: Create or Update HTTP Trigger
+        run: |
+          yc serverless trigger create http \
+            --name insightica-webhook-trigger \
+            --container-name insightica-bot \
+            --folder-id ${{ secrets.YC_FOLDER_ID }} \
+            --path /webhook || \
+          yc serverless trigger update http \
+            --trigger-name insightica-webhook-trigger \
+            --path /webhook
+
+      - name: Register Telegram Webhook
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: |
+          TRIGGER_URL=$(yc serverless trigger get \
+            --name insightica-webhook-trigger \
+            --folder-id ${{ secrets.YC_FOLDER_ID }} \
+            --format json | jq -r '.url')
+          curl -s \
+            -F "url=${TRIGGER_URL}${{ secrets.WEBHOOK_PATH }}" \
+            https://api.telegram.org/bot${TG_BOT_TOKEN}/setWebhook
