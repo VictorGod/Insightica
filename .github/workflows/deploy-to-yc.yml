@@ -9,22 +9,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Получаем код
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Create .env file
-        run: echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
-
+      # 2. Устанавливаем yc CLI
       - name: Setup Yandex Cloud CLI
         uses: nightstory/setup-yc@v1
         with:
           enable-cache: true
+      # Утилита yc ставится и кешируется для ускорения сборок :contentReference[oaicite:1]{index=1}.
 
+      # 3. Логинимся в Container Registry
       - name: Login to Yandex Container Registry
         uses: yc-actions/yc-cr-login@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+      # Действие настраивает docker-логин в Yandex CR :contentReference[oaicite:2]{index=2}.
 
+      # 4. Сборка и пуш Docker-образа
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
         with:
@@ -32,6 +35,7 @@ jobs:
           push: true
           tags: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/insightica-bot:${{ github.sha }}
 
+      # 5. Деплой в Serverless Containers
       - name: Deploy to Serverless Containers
         uses: yc-actions/yc-sls-container-deploy@v2
         with:
@@ -46,28 +50,22 @@ jobs:
           revision-execution-timeout: 600s
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
-            WEBHOOK_HOST=https://bba9mgrrav1hm9jcg23l.containers.yandexcloud.net
             WEBHOOK_PATH=/webhook
+      # Параметры ревизии — количество ядер, ОЗУ, таймаут и переменные окружения :contentReference[oaicite:3]{index=3}.
 
-      - name: Create or Update HTTP Trigger
-        run: |
-          yc serverless trigger create http \
-            --name insightica-webhook-trigger \
-            --container-name insightica-bot \
-            --folder-id ${{ secrets.YC_FOLDER_ID }} \
-            --path /webhook || \
-          yc serverless trigger update http \
-            --trigger-name insightica-webhook-trigger \
-            --path /webhook
-
+      # 6. Регистрация Telegram-webhook
       - name: Register Telegram Webhook
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         run: |
-          TRIGGER_URL=$(yc serverless trigger get \
-            --name insightica-webhook-trigger \
+          # Получаем ID контейнера
+          CONTAINER_ID=$(yc serverless container get \
+            --name insightica-bot \
             --folder-id ${{ secrets.YC_FOLDER_ID }} \
-            --format json | jq -r '.url')
-          curl -s \
-            -F "url=${TRIGGER_URL}/webhook" \
+            --format json | jq -r '.container.id')
+          # Формируем URL вебхука
+          WEBHOOK_URL="https://${CONTAINER_ID}.containers.yandexcloud.net${WEBHOOK_PATH}"
+          # Регистрируем в Telegram
+          curl -s -F "url=${WEBHOOK_URL}" \
             https://api.telegram.org/bot${TG_BOT_TOKEN}/setWebhook
+
