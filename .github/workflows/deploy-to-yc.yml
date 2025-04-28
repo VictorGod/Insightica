@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Получаем код
+      # 1. Чекаут
       - name: Checkout code
         uses: actions/checkout@v3
 
@@ -18,14 +18,12 @@ jobs:
         uses: nightstory/setup-yc@v1
         with:
           enable-cache: true
-      # Утилита yc ставится и кешируется для ускорения сборок :contentReference[oaicite:1]{index=1}.
 
-      # 3. Логинимся в Container Registry
+      # 3. Логинимся в Container Registry (для docker push)
       - name: Login to Yandex Container Registry
-        uses: yc-actions/yc-cr-login@v1
+        uses: yc-actions/yc-cr-login@v2
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
-      # Действие настраивает docker-логин в Yandex CR :contentReference[oaicite:2]{index=2}.
 
       # 4. Сборка и пуш Docker-образа
       - name: Build and Push Docker Image
@@ -48,24 +46,21 @@ jobs:
           revision-memory: 512Mb
           revision-concurrency: 1
           revision-execution-timeout: 600s
+          # Передаём в контейнер обе переменные, которые ждёт main.py
           revision-env: |
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
+            WEBHOOK_HOST=${{ secrets.WEBHOOK_HOST }}
             WEBHOOK_PATH=/webhook
-      # Параметры ревизии — количество ядер, ОЗУ, таймаут и переменные окружения :contentReference[oaicite:3]{index=3}.
 
-      # 6. Регистрация Telegram-webhook
+      # 6. Регистрация Telegram-вебхука
       - name: Register Telegram Webhook
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          WEBHOOK_HOST: ${{ secrets.WEBHOOK_HOST }}
+          WEBHOOK_PATH: /webhook
         run: |
-          # Получаем ID контейнера
-          CONTAINER_ID=$(yc serverless container get \
-            --name insightica-bot \
-            --folder-id ${{ secrets.YC_FOLDER_ID }} \
-            --format json | jq -r '.container.id')
-          # Формируем URL вебхука
-          WEBHOOK_URL="https://${CONTAINER_ID}.containers.yandexcloud.net${WEBHOOK_PATH}"
-          # Регистрируем в Telegram
-          curl -s -F "url=${WEBHOOK_URL}" \
-            https://api.telegram.org/bot${TG_BOT_TOKEN}/setWebhook
-
+          WEBHOOK_URL="https://${WEBHOOK_HOST}${WEBHOOK_PATH}"
+          echo "Setting Telegram webhook to ${WEBHOOK_URL}"
+          curl -s -X POST \
+            "https://api.telegram.org/bot${TG_BOT_TOKEN}/setWebhook" \
+            -F "url=${WEBHOOK_URL}"

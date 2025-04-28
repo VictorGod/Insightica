@@ -2,9 +2,9 @@ FROM python:3.10-slim-buster
 
 WORKDIR /usr/src/app
 
-# 1. Системные зависимости для сборки и headless Chrome
+# 1. Системные зависимости
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y \
       gcc \
       libffi-dev \
       libssl-dev \
@@ -17,39 +17,41 @@ RUN apt-get update && \
       unzip \
       python3-setuptools \
       python3-wheel \
-      xvfb && \
-    rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# 2. Установка Chrome
+# 2. Устанавливаем Chrome
 RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - && \
     echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
       > /etc/apt/sources.list.d/google-chrome.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends google-chrome-stable && \
+    apt-get install -y google-chrome-stable && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# 3. Установка ChromeDriver (используем полный номер версии)
-RUN FULL_VER=$(google-chrome --version | awk '{print $3}') && \
-    wget -q -O /tmp/chromedriver.zip \
-      https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$FULL_VER/linux64/chromedriver-linux64.zip && \
-    unzip /tmp/chromedriver.zip -d /tmp && \
-    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
-    chmod +x /usr/local/bin/chromedriver && \
-    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
+# 3. Качаем ChromeDriver совпадающей версии
+#    (фиксируем конкретную версию, чтобы избежать проблем с автоматическим парсингом)
+ARG CHROME_DRIVER_VERSION=135.0.7049.114
+RUN wget -q -O /tmp/chromedriver.zip \
+      https://storage.googleapis.com/chrome-for-testing-public/${CHROME_DRIVER_VERSION}/linux64/chromedriver-linux64.zip \
+    && unzip /tmp/chromedriver.zip -d /tmp \
+    && mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
 
-# 4. Копируем зависимости и устанавливаем Python-библиотеки
-COPY requirements.txt ./
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# 4. Копируем проект
+COPY . /usr/src/app/
 
-# 5. Копируем весь код приложения
-COPY . .
+# 5. Устанавливаем Python-зависимости
+RUN pip install --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 
-# 6. Переменные для headless Chrome и Xvfb
-ENV PYTHONUNBUFFERED=1
-ENV DISPLAY=:99
-ENV CHROME_BIN=/usr/bin/google-chrome
-ENV CHROME_PATH=/usr/lib/chromium/
+# 6. Переменные для headless Chrome
+ENV PYTHONUNBUFFERED=1 \
+    DISPLAY=:99 \
+    CHROME_BIN=/usr/bin/google-chrome \
+    CHROME_PATH=/usr/lib/chromium/ \
+    CHROME_DRIVER_PATH=/usr/local/bin/chromedriver
 
-# 7. Запуск Xvfb и бота
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 & python main.py"]
+# 7. Запуск бота
+CMD ["python", "main.py"]
