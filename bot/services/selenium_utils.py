@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import WebDriverException
 from bs4 import BeautifulSoup
 
 from ..config import get_selenium_config, get_marketplace_config
@@ -18,64 +19,73 @@ from ..config import get_selenium_config, get_marketplace_config
 logger = logging.getLogger(__name__)
 
 def get_webdriver():
-
-    # Загружаем конфигурацию
+    """
+    Создаёт и возвращает настроенный Chrome WebDriver.
+    Поддерживает:
+    - headless=new режим
+    - базовые флаги для контейнера (--no-sandbox, --disable-dev-shm-usage и др.)
+    - случайный user-agent из cfg
+    - случайный прокси из cfg
+    - автоматические повторные попытки и тестовое обращение к test_url
+    """
+    # Загружаем конфиг Selenium (примерно из вашего get_selenium_config)
     cfg = get_selenium_config()
-
-    # Формируем опции для Chrome
-    opts = Options()
-    if cfg.get("headless", True):
-        opts.add_argument("--headless")
     
-    # Случайный user-agent
+    # Параметры из конфига
+    headless = cfg.get("headless", True)
     user_agents = cfg.get("user_agents", [])
-    if user_agents:
-        opts.add_argument(f'user-agent={random.choice(user_agents)}')
-
-    # Базовые флаги для контейнерного режима
-    for arg in (
-        "--disable-extensions",
-        "--disable-gpu",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-blink-features=AutomationControlled"
-    ):
-        opts.add_argument(arg)
-
-    # Используем случайный прокси, если указаны
     proxies = cfg.get("proxies", [])
-    if proxies:
-        opts.add_argument(f"--proxy-server={random.choice(proxies)}")
-
-    # Путь к ChromeDriver из переменных окружения (если требуется)
-    chrome_driver_path = os.environ.get("CHROME_DRIVER_PATH")
-
     max_attempts = cfg.get("max_driver_attempts", 3)
     page_timeout = cfg.get("page_load_timeout", 30)
     test_url = cfg.get("test_url", "https://www.example.com")
 
+    # Формируем опции Chrome
+    opts = Options()
+    # Используем современный headless-режим
+    if headless:
+        opts.add_argument("--headless=new")
+    # Добавляем базовые флаги для контейнера
+    for arg in (
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-blink-features=AutomationControlled"
+    ):
+        opts.add_argument(arg)
+    # Случайный user-agent
+    if user_agents:
+        opts.add_argument(f"user-agent={random.choice(user_agents)}")
+    # Случайный прокси
+    if proxies:
+        opts.add_argument(f"--proxy-server={random.choice(proxies)}")
+
+    # Путь к ChromeDriver, если передан через переменную
+    chrome_driver_path = os.environ.get("CHROME_DRIVER_PATH")
+
     last_exception = None
     for attempt in range(1, max_attempts + 1):
         try:
-            # Создание сервиса для драйвера
+            # Создаём сервис для драйвера
             if chrome_driver_path and os.path.exists(chrome_driver_path):
                 service = Service(executable_path=chrome_driver_path)
             else:
+                # Автоустановка через webdriver_manager
                 service = Service(ChromeDriverManager().install())
 
             # Инициализация WebDriver
             driver = webdriver.Chrome(service=service, options=opts)
             driver.set_page_load_timeout(page_timeout)
 
-            # Проверка готовности
+            # Тестовый запрос, чтобы убедиться, что браузер живой
             driver.get(test_url)
-            _ = driver.title
+            _ = driver.title  # обращение к title для полной загрузки страницы
 
             if attempt > 1:
-                print(f"WebDriver успешно инициализирован с {attempt} попытки")
+                print(f"[WebDriver] Инициализирован с попытки {attempt}")
             return driver
 
-        except Exception as e:
+        except WebDriverException as e:
             print(f"[Attempt {attempt}/{max_attempts}] Ошибка WebDriver: {e}")
             last_exception = e
             try:
@@ -84,8 +94,10 @@ def get_webdriver():
                 pass
             time.sleep(1)
 
+    # Если не удалось ни разу
     raise RuntimeError(
-        f"Не удалось инициализировать WebDriver после {max_attempts} попыток. Последняя ошибка: {last_exception}"
+        f"Не удалось инициализировать WebDriver после {max_attempts} попыток. "
+        f"Последняя ошибка: {last_exception}"
     )
 
 
