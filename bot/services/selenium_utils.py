@@ -69,26 +69,102 @@ def get_webdriver():
 
     # Флаги для серверной контейнерной среды:
     container_args = [
-        "--disable-dev-shm-usage", 
-        "--no-sandbox",
-        "--disable-gpu",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-features=TranslateUI,VizDisplayCompositor",
-        "--disable-ipc-flooding-protection",
-        "--memory-pressure-off",
-        "--disable-background-timer-throttling",
-        "--disable-renderer-backgrounding",
-        "--disable-backgrounding-occluded-windows",
-        "--window-size=1920,1080",  # Размер окна фиксированный
-        "--disable-extensions",
-        "--no-default-browser-check",
-        "--disable-dev-tools",
-        "--disable-web-security",
-        "--no-first-run",
-        "--disable-crash-reporter",
-        "--user-data-dir=/tmp/chrome-user-data",
-        "--crash-dumps-dir=/tmp/crashes",
-    ]
+    # === Основные флаги безопасности и изоляции ===
+    "--no-sandbox",
+    "--disable-dev-shm-usage",  # Убрал дублирование
+    "--disable-gpu",
+    "--disable-web-security",
+    "--disable-features=VizDisplayCompositor",
+    "--disable-ipc-flooding-protection",
+    
+    # === Отключение автоматизации и детектирования ботов ===
+    "--disable-blink-features=AutomationControlled",
+    "--exclude-switches=enable-automation",
+    "--disable-automation",
+    "--disable-infobars",
+    
+    # === Оптимизация производительности и памяти ===
+    "--memory-pressure-off", 
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-hang-monitor",
+    "--disable-client-side-phishing-detection",
+    "--disable-popup-blocking",
+    "--disable-prompt-on-repost",
+    "--disable-sync",
+    
+    # === Отключение ненужных функций ===
+    "--disable-extensions",
+    "--disable-plugins",
+    "--disable-java",
+    "--disable-translate",
+    "--disable-features=TranslateUI",
+    "--disable-default-apps",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-background-networking",
+    
+    # === Настройки окна и отображения ===
+    "--window-size=1920,1080",
+    "--start-maximized",
+    "--disable-notifications",
+    "--disable-desktop-notifications",
+    
+    # === Системные настройки ===
+    "--no-default-browser-check",
+    "--no-first-run",
+    "--disable-dev-tools",
+    "--disable-crash-reporter",
+    "--disable-logging",
+    "--silent",
+    "--disable-device-discovery-notifications",
+    
+    # === Управление данными и кэшем ===
+    "--user-data-dir=/tmp/chrome-user-data",
+    "--crash-dumps-dir=/tmp/crashes", 
+    "--disk-cache-dir=/tmp/cache",
+    "--disk-cache-size=104857600",  # 100MB кэш
+    "--aggressive-cache-discard",
+    
+    # === Дополнительные флаги стабильности ===
+    "--disable-software-rasterizer",
+    "--disable-threaded-animation",
+    "--disable-threaded-scrolling",
+    "--disable-checker-imaging",
+    "--disable-new-bookmark-apps",
+    "--disable-search-geolocation-disclosure",
+    "--disable-background-mode",
+    "--disable-add-to-shelf",
+    "--disable-gesture-typing",
+    
+    # === Сетевые оптимизации ===
+    "--disable-background-downloads",
+    "--disable-domain-reliability",
+    "--disable-features=MediaRouter",
+    "--disable-print-preview",
+    
+    # === Производительность процессора ===
+    "--max_old_space_size=4096",
+    "--process-per-site",
+
+    
+    # === Дополнительные флаги для headless режима ===
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--disable-audio-output",
+    "--disable-bundled-ppapi-flash",
+    "--disable-logging",
+    "--disable-plugins-discovery",
+    "--disable-preconnect",
+    
+    # === Флаги для устранения утечек памяти ===
+    "--memory-pressure-off",
+    "--disable-renderer-accessibility", 
+    "--disable-speech-api",
+    "--disable-file-system",
+    "--disable-shared-workers",
+    "--disable-web-sockets"
+]
 
     # Добавляем все аргументы
     for arg in container_args:
