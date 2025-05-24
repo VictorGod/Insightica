@@ -21,68 +21,93 @@ logger = logging.getLogger(__name__)
 def get_webdriver():
     """
     Создаёт и возвращает настроенный Chrome WebDriver.
-    Поддерживает headless=new, контейнерные флаги, user-agent, прокси и retry.
+    Использует встроенный Selenium Manager вместо ChromeDriverManager.
     """
     cfg = get_selenium_config()
-    headless     = cfg.get("headless", True)
-    user_agents  = cfg.get("user_agents", [])
-    proxies      = cfg.get("proxies", [])
+    headless = cfg.get("headless", True)
+    user_agents = cfg.get("user_agents", [])
+    proxies = cfg.get("proxies", [])
     max_attempts = cfg.get("max_driver_attempts", 3)
     page_timeout = cfg.get("page_load_timeout", 30)
-    test_url     = cfg.get("test_url", "https://www.example.com")
+    test_url = cfg.get("test_url", "https://www.example.com")
 
     opts = Options()
+    
     # Указываем путь к Chrome в контейнере:
     chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
     opts.binary_location = chrome_bin
+
     # Современный headless-режим:
     if headless:
         opts.add_argument("--headless=new")
-    # Контейнерные флаги:
-    for arg in (
+
+    # Критичные флаги для стабильности в контейнерах:
+    container_args = [
         "--no-sandbox",
-        "--disable-dev-shm-usage",
+        "--disable-dev-shm-usage", 
         "--disable-gpu",
         "--disable-extensions",
-        "--disable-blink-features=AutomationControlled"
-    ):
+        "--disable-blink-features=AutomationControlled",
+        # Дополнительные флаги для предотвращения краша:
+        "--single-process",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-features=TranslateUI,VizDisplayCompositor",
+        "--memory-pressure-off",
+        "--remote-debugging-port=9222"
+    ]
+    
+    for arg in container_args:
         opts.add_argument(arg)
+
     # User-agent и прокси
     if user_agents:
         opts.add_argument(f"user-agent={random.choice(user_agents)}")
     if proxies:
         opts.add_argument(f"--proxy-server={random.choice(proxies)}")
 
-    chrome_driver_path = os.environ.get("CHROME_DRIVER_PATH")
     last_exception = None
-
-    for attempt in range(1, max_attempts+1):
+    
+    for attempt in range(1, max_attempts + 1):
         try:
-            service = (
-                Service(chrome_driver_path)
-                if chrome_driver_path and os.path.exists(chrome_driver_path)
-                else Service(ChromeDriverManager().install())
-            )
-            driver = webdriver.Chrome(service=service, options=opts)
+            # ГЛАВНОЕ ИЗМЕНЕНИЕ: убираем service, позволяем Selenium Manager управлять
+            driver = webdriver.Chrome(options=opts)
+            
             driver.set_page_load_timeout(page_timeout)
             driver.get(test_url)
             _ = driver.title
+            
             if attempt > 1:
-                print(f"[WebDriver] Инициализирован с попытки {attempt}")
+                logger.info(f"WebDriver инициализирован с попытки {attempt}")
+            
             return driver
+
         except WebDriverException as e:
-            print(f"[Attempt {attempt}/{max_attempts}] Ошибка WebDriver: {e}")
+            logger.warning(f"Attempt {attempt}/{max_attempts} failed: {e}")
             last_exception = e
+            
+            # Очистка при неудаче
             try:
-                driver.quit()
+                if 'driver' in locals():
+                    driver.quit()
             except Exception:
                 pass
-            time.sleep(1)
+            
+            time.sleep(2)
 
     raise RuntimeError(
         f"Не удалось инициализировать WebDriver после {max_attempts} попыток. "
         f"Последняя ошибка: {last_exception}"
     )
+
+def check_driver_alive(driver):
+    """Проверяет что драйвер еще живой"""
+    try:
+        _ = driver.current_url
+        return True
+    except Exception:
+        return False
 
 
 def capture_screenshot(driver, name: str) -> str:
