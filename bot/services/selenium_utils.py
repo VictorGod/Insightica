@@ -40,16 +40,13 @@ def cleanup_chrome_dirs():
 
 def get_webdriver():
     """
-    Создаёт и возвращает настроенный Chrome WebDriver.
-    Использует встроенный Selenium Manager вместо ChromeDriverManager.
-    Оптимизирован для Docker контейнера.
+    Создаёт Chrome WebDriver с флагами для стабильной работы в Docker/серверной среде.
     """
     
-    # КРИТИЧНО: Убиваем все предыдущие процессы Chrome перед запуском
     kill_chrome_processes()
     cleanup_chrome_dirs()
     
-    # Создаем директории заново
+    # Создаем временные директории заново
     os.makedirs("/tmp/chrome-user-data", exist_ok=True)
     os.makedirs("/tmp/crashes", exist_ok=True)
 
@@ -59,101 +56,70 @@ def get_webdriver():
     proxies = cfg.get("proxies", [])
     max_attempts = cfg.get("max_driver_attempts", 3)
     page_timeout = cfg.get("page_load_timeout", 30)
-    test_url = cfg.get("test_url", "https://www.example.com")
 
     opts = Options()
-    
-    # Указываем путь к Chrome в контейнере:
-    chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
-    opts.binary_location = chrome_bin
 
-    # Современный headless-режим (ИСПРАВЛЕНО: убираем дублирование):
+    # Указываем путь к Chrome (важно для Docker окружения):
+    chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
+    opts.binary_location = chrome_bin  
+
+    # Современный headless режим
     if headless:
         opts.add_argument("--headless=new")
 
-    # ИСПРАВЛЕННЫЕ флаги для стабильности в Docker контейнерах:
+    # Флаги для серверной контейнерной среды:
     container_args = [
-        "--no-sandbox",
         "--disable-dev-shm-usage", 
+        "--no-sandbox",
         "--disable-gpu",
-        "--disable-extensions",
         "--disable-blink-features=AutomationControlled",
-        
-        # УБРАНО --single-process (вызывает SEGFAULT в Lambda/Docker)!
-        # "--single-process",  # ← ЗАКОММЕНТИРОВАНО!
-        
-        # Безопасные флаги для предотвращения краша:
-        "--disable-background-timer-throttling",
-        "--disable-backgrounding-occluded-windows",
-        "--disable-renderer-backgrounding",
         "--disable-features=TranslateUI,VizDisplayCompositor",
-        "--memory-pressure-off",
         "--disable-ipc-flooding-protection",
-        
-        # Управление процессами и памятью:
-        "--max-old-space-size=4096",
-        "--no-first-run",
+        "--memory-pressure-off",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-backgrounding-occluded-windows",
+        "--window-size=1920,1080",  # Размер окна фиксированный
+        "--disable-extensions",
         "--no-default-browser-check",
+        "--disable-dev-tools",
         "--disable-web-security",
-        "--disable-hang-monitor",
-        
-        # Директории и отчеты:
+        "--no-first-run",
+        "--disable-crash-reporter",
         "--user-data-dir=/tmp/chrome-user-data",
         "--crash-dumps-dir=/tmp/crashes",
-        "--disable-crash-reporter",
-        "--disable-logging",
-        
-        # УБРАНО remote-debugging-port (может конфликтовать в контейнере)
-        # "--remote-debugging-port=9222",  # ← ЗАКОММЕНТИРОВАНО!
-        
-        # УБРАНО дублирование --headless=new (уже добавлено выше)
-        # "--headless=new",  # ← ЗАКОММЕНТИРОВАНО!
     ]
-    
+
+    # Добавляем все аргументы
     for arg in container_args:
         opts.add_argument(arg)
 
-    # User-agent и прокси
+    # Добавляем случайный User-Agent (по желанию)
     if user_agents:
         opts.add_argument(f"user-agent={random.choice(user_agents)}")
     if proxies:
         opts.add_argument(f"--proxy-server={random.choice(proxies)}")
 
-    last_exception = None
-    
+    driver = None
     for attempt in range(1, max_attempts + 1):
         try:
-            # ГЛАВНОЕ ИЗМЕНЕНИЕ: убираем service, позволяем Selenium Manager управлять
-            driver = webdriver.Chrome(options=opts)
-            
+            driver = webdriver.Chrome(
+                options=opts,
+                service=Service(ChromeDriverManager().install())
+            )
             driver.set_page_load_timeout(page_timeout)
-            driver.get(test_url)
-            _ = driver.title
-            
-            if attempt > 1:
-                logger.info(f"WebDriver инициализирован с попытки {attempt}")
-            
+            # Проверим работоспособность
+            driver.get("data:text/html,<html><body>Test</body></html>")
+            _ = driver.title  # Пробуем прочитать
             return driver
-
         except WebDriverException as e:
-            logger.warning(f"Attempt {attempt}/{max_attempts} failed: {e}")
-            last_exception = e
-            
-            # УЛУЧШЕННАЯ очистка при неудаче
-            try:
-                if 'driver' in locals():
-                    driver.quit()
-            except Exception:
-                pass
-            
-            # Убиваем все Chrome процессы после неудачи
+            logger.warning(f"Ошибка запуска WebDriver (попытка {attempt}/{max_attempts}): {e}")
+            if 'driver' in locals():
+                safe_quit_driver(driver)
             kill_chrome_processes()
             time.sleep(2)
 
-    raise RuntimeError(
-        f"Не удалось инициализировать WebDriver после {max_attempts} попыток. "
-        f"Последняя ошибка: {last_exception}"
-    )
+    raise RuntimeError("WebDriver не удалось инициализировать после всех попыток.")
 
 def check_driver_alive(driver):
     """Проверяет что драйвер еще живой"""
