@@ -4,6 +4,8 @@ import logging
 import os
 import time
 import random
+import signal
+import subprocess
 from datetime import datetime
 
 from selenium import webdriver
@@ -17,13 +19,37 @@ from bs4 import BeautifulSoup
 from ..config import get_selenium_config, get_marketplace_config
 
 logger = logging.getLogger(__name__)
+def kill_chrome_processes():
+    """Принудительно убивает все процессы Chrome"""
+    try:
+        subprocess.run(['pkill', '-f', 'chrome'], stderr=subprocess.DEVNULL, timeout=5)
+        subprocess.run(['pkill', '-f', 'google-chrome'], stderr=subprocess.DEVNULL, timeout=5)
+        subprocess.run(['pkill', '-f', 'chromedriver'], stderr=subprocess.DEVNULL, timeout=5)
+        time.sleep(1)
+    except Exception:
+        pass
+
+def cleanup_chrome_dirs():
+    """Очищает временные директории Chrome"""
+    try:
+        subprocess.run(['rm', '-rf', '/tmp/chrome-user-data'], stderr=subprocess.DEVNULL, timeout=5)
+        subprocess.run(['rm', '-rf', '/tmp/crashes'], stderr=subprocess.DEVNULL, timeout=5)
+        subprocess.run(['rm', '-rf', '/tmp/.com.google.Chrome*'], stderr=subprocess.DEVNULL, timeout=5)
+    except Exception:
+        pass
 
 def get_webdriver():
     """
     Создаёт и возвращает настроенный Chrome WebDriver.
     Использует встроенный Selenium Manager вместо ChromeDriverManager.
+    Оптимизирован для Docker контейнера.
     """
-
+    
+    # КРИТИЧНО: Убиваем все предыдущие процессы Chrome перед запуском
+    kill_chrome_processes()
+    cleanup_chrome_dirs()
+    
+    # Создаем директории заново
     os.makedirs("/tmp/chrome-user-data", exist_ok=True)
     os.makedirs("/tmp/crashes", exist_ok=True)
 
@@ -41,30 +67,47 @@ def get_webdriver():
     chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
     opts.binary_location = chrome_bin
 
-    # Современный headless-режим:
+    # Современный headless-режим (ИСПРАВЛЕНО: убираем дублирование):
     if headless:
         opts.add_argument("--headless=new")
 
-    # Критичные флаги для стабильности в контейнерах:
+    # ИСПРАВЛЕННЫЕ флаги для стабильности в Docker контейнерах:
     container_args = [
         "--no-sandbox",
         "--disable-dev-shm-usage", 
         "--disable-gpu",
         "--disable-extensions",
         "--disable-blink-features=AutomationControlled",
-        # Дополнительные флаги для предотвращения краша:
-        "--single-process",
+        
+        # УБРАНО --single-process (вызывает SEGFAULT в Lambda/Docker)!
+        # "--single-process",  # ← ЗАКОММЕНТИРОВАНО!
+        
+        # Безопасные флаги для предотвращения краша:
         "--disable-background-timer-throttling",
         "--disable-backgrounding-occluded-windows",
         "--disable-renderer-backgrounding",
         "--disable-features=TranslateUI,VizDisplayCompositor",
         "--memory-pressure-off",
-        "--remote-debugging-port=9222",
         "--disable-ipc-flooding-protection",
-
-        "--user-data-dir=/tmp/chrome-user-data",    # Решает файловую проблему
-        "--disable-crash-reporter",                 # Убирает дополнительные процессы
-        "--headless=new",                          # Новый stable headless режим
+        
+        # Управление процессами и памятью:
+        "--max-old-space-size=4096",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-web-security",
+        "--disable-hang-monitor",
+        
+        # Директории и отчеты:
+        "--user-data-dir=/tmp/chrome-user-data",
+        "--crash-dumps-dir=/tmp/crashes",
+        "--disable-crash-reporter",
+        "--disable-logging",
+        
+        # УБРАНО remote-debugging-port (может конфликтовать в контейнере)
+        # "--remote-debugging-port=9222",  # ← ЗАКОММЕНТИРОВАНО!
+        
+        # УБРАНО дублирование --headless=new (уже добавлено выше)
+        # "--headless=new",  # ← ЗАКОММЕНТИРОВАНО!
     ]
     
     for arg in container_args:
@@ -96,13 +139,15 @@ def get_webdriver():
             logger.warning(f"Attempt {attempt}/{max_attempts} failed: {e}")
             last_exception = e
             
-            # Очистка при неудаче
+            # УЛУЧШЕННАЯ очистка при неудаче
             try:
                 if 'driver' in locals():
                     driver.quit()
             except Exception:
                 pass
             
+            # Убиваем все Chrome процессы после неудачи
+            kill_chrome_processes()
             time.sleep(2)
 
     raise RuntimeError(
@@ -118,6 +163,17 @@ def check_driver_alive(driver):
     except Exception:
         return False
 
+def safe_quit_driver(driver):
+    """Безопасно закрывает драйвер и убивает все процессы"""
+    try:
+        if driver:
+            driver.quit()
+    except Exception:
+        pass
+    
+    # КРИТИЧНО: принудительно убиваем все Chrome процессы
+    kill_chrome_processes()
+    cleanup_chrome_dirs()
 
 def capture_screenshot(driver, name: str) -> str:
     screenshots_dir = get_selenium_config().get("screenshots_dir", "screenshots")
@@ -192,5 +248,6 @@ async def check_selectors_validity():
                 if html:
                     analyze_page_structure(html, m)
             finally:
-                drv.quit()
+                # ИСПОЛЬЗУЕМ безопасное закрытие
+                safe_quit_driver(drv)
         await asyncio.sleep(3600)
