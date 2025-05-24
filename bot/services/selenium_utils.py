@@ -23,6 +23,10 @@ def get_webdriver():
     Создаёт и возвращает настроенный Chrome WebDriver.
     Использует встроенный Selenium Manager вместо ChromeDriverManager.
     """
+
+    os.makedirs("/tmp/chrome-user-data", exist_ok=True)
+    os.makedirs("/tmp/crashes", exist_ok=True)
+
     cfg = get_selenium_config()
     headless = cfg.get("headless", True)
     user_agents = cfg.get("user_agents", [])
@@ -56,7 +60,11 @@ def get_webdriver():
         "--disable-features=TranslateUI,VizDisplayCompositor",
         "--memory-pressure-off",
         "--remote-debugging-port=9222",
-        "--disable-ipc-flooding-protection"
+        "--disable-ipc-flooding-protection",
+
+        "--user-data-dir=/tmp/chrome-user-data",    # Решает файловую проблему
+        "--disable-crash-reporter",                 # Убирает дополнительные процессы
+        "--headless=new",                          # Новый stable headless режим
     ]
     
     for arg in container_args:
