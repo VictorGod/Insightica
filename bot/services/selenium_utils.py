@@ -56,6 +56,7 @@ def get_webdriver():
         "--disable-features=TranslateUI,VizDisplayCompositor",
         "--memory-pressure-off",
         "--remote-debugging-port=9222"
+        "--disable-ipc-flooding-protection"
     ]
     
     for arg in container_args:
