@@ -55,7 +55,7 @@ def get_webdriver():
         "--disable-renderer-backgrounding",
         "--disable-features=TranslateUI,VizDisplayCompositor",
         "--memory-pressure-off",
-        "--remote-debugging-port=9222"
+        "--remote-debugging-port=9222",
         "--disable-ipc-flooding-protection"
     ]
     
