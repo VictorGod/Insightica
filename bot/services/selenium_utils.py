@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 from ..config import get_selenium_config, get_marketplace_config
 
 logger = logging.getLogger(__name__)
+
 def kill_chrome_processes():
     """Принудительно убивает все процессы Chrome"""
     try:
@@ -42,10 +43,9 @@ def get_webdriver():
     """
     Создаёт Chrome WebDriver с флагами для стабильной работы в Docker/серверной среде.
     """
-    
     kill_chrome_processes()
     cleanup_chrome_dirs()
-    
+
     # Создаем временные директории заново
     os.makedirs("/tmp/chrome-user-data", exist_ok=True)
     os.makedirs("/tmp/crashes", exist_ok=True)
@@ -58,115 +58,24 @@ def get_webdriver():
     page_timeout = cfg.get("page_load_timeout", 30)
 
     opts = Options()
-
-    # Указываем путь к Chrome (важно для Docker окружения):
     chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
-    opts.binary_location = chrome_bin  
+    opts.binary_location = chrome_bin
 
     # Современный headless режим
     if headless:
         opts.add_argument("--headless=new")
 
-    # Флаги для серверной контейнерной среды:
+    # Обновлённый набор флагов
     container_args = [
-    # === Основные флаги безопасности и изоляции ===
-    "--no-sandbox",
-    "--disable-dev-shm-usage",  # Убрал дублирование
-    "--disable-gpu",
-    "--disable-web-security",
-    "--disable-features=VizDisplayCompositor",
-    "--disable-ipc-flooding-protection",
-    
-    # === Отключение автоматизации и детектирования ботов ===
-    "--disable-blink-features=AutomationControlled",
-    "--exclude-switches=enable-automation",
-    "--disable-automation",
-    "--disable-infobars",
-    
-    # === Оптимизация производительности и памяти ===
-    "--memory-pressure-off", 
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-hang-monitor",
-    "--disable-client-side-phishing-detection",
-    "--disable-popup-blocking",
-    "--disable-prompt-on-repost",
-    "--disable-sync",
-    
-    # === Отключение ненужных функций ===
-    "--disable-extensions",
-    "--disable-plugins",
-    "--disable-java",
-    "--disable-translate",
-    "--disable-features=TranslateUI",
-    "--disable-default-apps",
-    "--disable-component-extensions-with-background-pages",
-    "--disable-background-networking",
-    
-    # === Настройки окна и отображения ===
-    "--window-size=1920,1080",
-    "--start-maximized",
-    "--disable-notifications",
-    "--disable-desktop-notifications",
-    
-    # === Системные настройки ===
-    "--no-default-browser-check",
-    "--no-first-run",
-    "--disable-dev-tools",
-    "--disable-crash-reporter",
-    "--disable-logging",
-    "--silent",
-    "--disable-device-discovery-notifications",
-    
-    # === Управление данными и кэшем ===
-    "--user-data-dir=/tmp/chrome-user-data",
-    "--crash-dumps-dir=/tmp/crashes", 
-    "--disk-cache-dir=/tmp/cache",
-    "--disk-cache-size=104857600",  # 100MB кэш
-    "--aggressive-cache-discard",
-    
-    # === Дополнительные флаги стабильности ===
-    "--disable-software-rasterizer",
-    "--disable-threaded-animation",
-    "--disable-threaded-scrolling",
-    "--disable-checker-imaging",
-    "--disable-new-bookmark-apps",
-    "--disable-search-geolocation-disclosure",
-    "--disable-background-mode",
-    "--disable-add-to-shelf",
-    "--disable-gesture-typing",
-    
-    # === Сетевые оптимизации ===
-    "--disable-background-downloads",
-    "--disable-domain-reliability",
-    "--disable-features=MediaRouter",
-    "--disable-print-preview",
-    
-    # === Производительность процессора ===
-    "--max_old_space_size=4096",
-    "--process-per-site",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--window-size=1920,1080",
+        "--user-data-dir=/tmp/chrome-user-data",
+        "--crash-dumps-dir=/tmp/crashes",
+    ]
 
-    
-    # === Дополнительные флаги для headless режима ===
-    "--hide-scrollbars",
-    "--mute-audio",
-    "--disable-audio-output",
-    "--disable-bundled-ppapi-flash",
-    "--disable-logging",
-    "--disable-plugins-discovery",
-    "--disable-preconnect",
-    
-    # === Флаги для устранения утечек памяти ===
-    "--memory-pressure-off",
-    "--disable-renderer-accessibility", 
-    "--disable-speech-api",
-    "--disable-file-system",
-    "--disable-shared-workers",
-    "--disable-web-sockets"
-]
-
-    # Добавляем все аргументы
     for arg in container_args:
         opts.add_argument(arg)
 
@@ -190,7 +99,7 @@ def get_webdriver():
             return driver
         except WebDriverException as e:
             logger.warning(f"Ошибка запуска WebDriver (попытка {attempt}/{max_attempts}): {e}")
-            if 'driver' in locals():
+            if driver:
                 safe_quit_driver(driver)
             kill_chrome_processes()
             time.sleep(2)
@@ -212,8 +121,6 @@ def safe_quit_driver(driver):
             driver.quit()
     except Exception:
         pass
-    
-    # КРИТИЧНО: принудительно убиваем все Chrome процессы
     kill_chrome_processes()
     cleanup_chrome_dirs()
 
@@ -266,7 +173,7 @@ def analyze_page_structure(html_path: str, marketplace: str):
         with open(out, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logging.getLogger(__name__).error(e)
+        logger.error(e)
 
 async def scroll_page(driver, max_scrolls=5):
     last = driver.execute_script("return document.body.scrollHeight")
@@ -290,6 +197,5 @@ async def check_selectors_validity():
                 if html:
                     analyze_page_structure(html, m)
             finally:
-                # ИСПОЛЬЗУЕМ безопасное закрытие
                 safe_quit_driver(drv)
         await asyncio.sleep(3600)
