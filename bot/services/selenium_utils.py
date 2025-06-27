@@ -4,16 +4,14 @@ import logging
 import os
 import time
 import random
-import signal
 import subprocess
 from datetime import datetime
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
 from ..config import get_selenium_config, get_marketplace_config
@@ -42,13 +40,15 @@ def cleanup_chrome_dirs():
 def get_webdriver():
     """
     Создаёт Chrome WebDriver с флагами для стабильной работы в Docker/серверной среде.
+    При ошибках собирает логи chromedriver и самого Chrome для диагностики.
     """
     kill_chrome_processes()
     cleanup_chrome_dirs()
 
-    # Создаем временные директории заново
+    # Создаём временные директории заново
     os.makedirs("/tmp/chrome-user-data", exist_ok=True)
     os.makedirs("/tmp/crashes", exist_ok=True)
+    os.makedirs("/tmp/logs", exist_ok=True)
 
     cfg = get_selenium_config()
     headless = cfg.get("headless", True)
@@ -65,43 +65,73 @@ def get_webdriver():
     if headless:
         opts.add_argument("--headless=new")
 
-    # Обновлённый набор флагов
+    # Флаги для стабильности и логгирования
     container_args = [
-    "--headless=new",
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-software-rasterizer",
-    "--user-data-dir=/tmp/chrome-user-data",
-    "--crash-dumps-dir=/tmp/crashes",
-    "--window-size=1920,1080",
-    "--single-process",
-    "--no-zygote",
-]
-
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--user-data-dir=/tmp/chrome-user-data",
+        "--crash-dumps-dir=/tmp/crashes",
+        "--window-size=1920,1080",
+        "--single-process",
+        "--no-zygote",
+        # Включаем логирование Chrome
+        "--enable-logging",
+        "--v=1",
+        "--log-path=/tmp/logs/chrome.log",
+    ]
     for arg in container_args:
         opts.add_argument(arg)
 
-    # Добавляем случайный User-Agent (по желанию)
+    # Случайный User-Agent и прокси
     if user_agents:
         opts.add_argument(f"user-agent={random.choice(user_agents)}")
     if proxies:
         opts.add_argument(f"--proxy-server={random.choice(proxies)}")
 
+    # Подготовка service для Chromedriver с логами
+    chromedriver_log = "/tmp/logs/chromedriver.log"
+    try:
+        os.remove(chromedriver_log)
+    except OSError:
+        pass
+
+    service = Service(
+        ChromeDriverManager().install(),
+        log_path=chromedriver_log,
+        service_args=["--verbose"]
+    )
+
     driver = None
     for attempt in range(1, max_attempts + 1):
         try:
-            driver = webdriver.Chrome(
-                options=opts,
-                service=Service(ChromeDriverManager().install())
-            )
+            driver = webdriver.Chrome(options=opts, service=service)
             driver.set_page_load_timeout(page_timeout)
-            # Проверим работоспособность
+            # Простейшая проверка работоспособности
             driver.get("data:text/html,<html><body>Test</body></html>")
-            _ = driver.title  # Пробуем прочитать
+            _ = driver.title
             return driver
+
         except WebDriverException as e:
             logger.warning(f"Ошибка запуска WebDriver (попытка {attempt}/{max_attempts}): {e}")
+
+            # Вывод последних строк из chromedriver.log
+            if os.path.exists(chromedriver_log):
+                with open(chromedriver_log, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.read().splitlines()
+                tail = "\n".join(lines[-50:])
+                logger.error(f"--- Последние 50 строк chromedriver.log ---\n{tail}")
+
+            # Вывод последних строк из chrome.log
+            chrome_log = "/tmp/logs/chrome.log"
+            if os.path.exists(chrome_log):
+                with open(chrome_log, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.read().splitlines()
+                tail = "\n".join(lines[-50:])
+                logger.error(f"--- Последние 50 строк chrome.log ---\n{tail}")
+
+            # Безопасно закрываем, убиваем процессы и ждём перед новой попыткой
             if driver:
                 safe_quit_driver(driver)
             kill_chrome_processes()
@@ -110,7 +140,7 @@ def get_webdriver():
     raise RuntimeError("WebDriver не удалось инициализировать после всех попыток.")
 
 def check_driver_alive(driver):
-    """Проверяет что драйвер еще живой"""
+    """Проверяет, что драйвер еще живой"""
     try:
         _ = driver.current_url
         return True
@@ -163,7 +193,7 @@ def analyze_page_structure(html_path: str, marketplace: str):
         with open(html_path, "r", encoding="utf-8") as f:
             txt = f.read()
         soup = BeautifulSoup(txt, "html.parser")
-        cfg  = get_marketplace_config(marketplace)
+        cfg = get_marketplace_config(marketplace)
         report = {}
         for name, sel in cfg.items():
             if isinstance(sel, str) and sel.startswith((".", "#", "div", "[")):
