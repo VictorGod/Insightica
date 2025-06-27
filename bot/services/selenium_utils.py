@@ -34,9 +34,9 @@ def kill_chrome_processes():
 def cleanup_chrome_dirs():
     """Очищает временные директории Chrome"""
     try:
-        subprocess.run(['rm', '-rf', '/tmp/chrome-user-data'], stderr=subprocess.DEVNULL, timeout=5)
-        subprocess.run(['rm', '-rf', '/tmp/crashes'], stderr=subprocess.DEVNULL, timeout=5)
-        subprocess.run(['rm', '-rf', '/tmp/.com.google.Chrome*'], stderr=subprocess.DEVNULL, timeout=5)
+        shutil.rmtree('/tmp/chrome-user-data', ignore_errors=True)
+        shutil.rmtree('/tmp/crashes', ignore_errors=True)
+        shutil.rmtree('/tmp/.com.google.Chrome*', ignore_errors=True)
     except Exception:
         pass
 
@@ -72,8 +72,8 @@ def log_system_state():
 
 def get_webdriver():
     """
-    Создаёт Chrome WebDriver с флагами для стабильной работы в Docker/серверной среде.
-    При ошибках собирает логи chromedriver, Chrome, и системное состояние для диагностики.
+    Создаёт headless Chrome WebDriver.
+    При ошибках — собирает логи chromedriver, Chrome и снимок системы.
     """
     kill_chrome_processes()
     cleanup_chrome_dirs()
@@ -83,48 +83,38 @@ def get_webdriver():
     os.makedirs("/tmp/logs", exist_ok=True)
 
     cfg = get_selenium_config()
-    headless = cfg.get("headless", True)
-    user_agents = cfg.get("user_agents", [])
-    proxies = cfg.get("proxies", [])
+    headless     = cfg.get("headless", True)
+    user_agents  = cfg.get("user_agents", [])
+    proxies      = cfg.get("proxies", [])
     max_attempts = cfg.get("max_driver_attempts", 3)
     page_timeout = cfg.get("page_load_timeout", 30)
 
     opts = Options()
     opts.binary_location = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
     if headless:
-        opts.add_argument("--headless=new")
+        opts.add_argument("--headless")
 
+    # Основные флаги для стабильности
     container_args = [
-    "--headless=new",
-    "--no-sandbox",
-
-    # Отключаем GPU и ускорение — оставляем софт-рендеринг
-    "--disable-gpu",
-    "--disable-software-rasterizer",
-
-    # Если не монтируете /dev/shm через Docker, то нужно:
-    "--disable-dev-shm-usage",
-
-    # Основной профиль и дампы
-    "--user-data-dir=/tmp/chrome-user-data",
-    "--crash-dumps-dir=/tmp/crashes",
-
-    # Размер окна
-    "--window-size=1920,1080",
-
-    # Отключаем ненужные фичи и фоновую сеть
-    "--disable-background-networking",
-    "--disable-features=VizDisplayCompositor,Accelerated2dCanvas",
-    "--no-first-run",
-    "--no-default-browser-check",
-
-    # Логирование для диагностики
-    "--enable-logging",
-    "--v=1",
-    "--log-path=/tmp/logs/chrome.log",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-features=VizDisplayCompositor,Accelerated2dCanvas,AudioServiceOutOfProcess",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--window-size=1920,1080",
+        # логирование
+        "--enable-logging",
+        "--v=1",
+        "--log-path=/tmp/logs/chrome.log",
     ]
-    for arg in container_args:
-        opts.add_argument(arg)
+    for a in container_args:
+        opts.add_argument(a)
 
     if user_agents:
         opts.add_argument(f"user-agent={random.choice(user_agents)}")
@@ -143,40 +133,30 @@ def get_webdriver():
         service_args=["--verbose"]
     )
 
-    driver = None
-    for attempt in range(1, max_attempts + 1):
+    for i in range(1, max_attempts + 1):
+        driver = None
         try:
             driver = webdriver.Chrome(options=opts, service=service)
             driver.set_page_load_timeout(page_timeout)
-            driver.get("data:text/html,<html><body>Test</body></html>")
+            driver.get("data:,<html><body>ok</body></html>")
             _ = driver.title
             return driver
-
         except WebDriverException as e:
-            logger.warning(f"Ошибка запуска WebDriver (попытка {attempt}/{max_attempts}): {e}")
-
-            # Хвост chromedriver.log
-            if os.path.exists(chromedriver_log):
-                with open(chromedriver_log, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = f.read().splitlines()
-                logger.error("--- Последние 50 строк chromedriver.log ---\n" + "\n".join(lines[-50:]))
-
-            # Хвост chrome.log
-            chrome_log = "/tmp/logs/chrome.log"
-            if os.path.exists(chrome_log):
-                with open(chrome_log, "r", encoding="utf-8", errors="ignore") as f:
-                    lines = f.read().splitlines()
-                logger.error("--- Последние 50 строк chrome.log ---\n" + "\n".join(lines[-50:]))
-
-            # Логируем состояние системы
+            logger.warning(f"[{i}/{max_attempts}] WebDriver failed: {e}")
+            # хвосты логов
+            for logf, name in ((chromedriver_log, "chromedriver"), ("/tmp/logs/chrome.log", "chrome")):
+                if os.path.exists(logf):
+                    tail = open(logf, errors="ignore").read().splitlines()[-30:]
+                    logger.error(f"--- last 30 lines {name}.log ---\n" + "\n".join(tail))
             log_system_state()
-
+        finally:
             if driver:
-                safe_quit_driver(driver)
+                try: driver.quit()
+                except: pass
             kill_chrome_processes()
             time.sleep(2)
 
-    raise RuntimeError("WebDriver не удалось инициализировать после всех попыток.")
+    raise RuntimeError("Не удалось инициализировать WebDriver")
 
 
 def check_driver_alive(driver):
