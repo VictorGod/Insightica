@@ -67,14 +67,17 @@ def get_webdriver():
 
     # Обновлённый набор флагов
     container_args = [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-extensions",
-        "--window-size=1920,1080",
-        "--user-data-dir=/tmp/chrome-user-data",
-        "--crash-dumps-dir=/tmp/crashes",
-    ]
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--user-data-dir=/tmp/chrome-user-data",
+    "--crash-dumps-dir=/tmp/crashes",
+    "--window-size=1920,1080",
+    "--single-process",
+    "--no-zygote",
+]
 
     for arg in container_args:
         opts.add_argument(arg)
