@@ -95,18 +95,33 @@ def get_webdriver():
         opts.add_argument("--headless=new")
 
     container_args = [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-software-rasterizer",
-        "--user-data-dir=/tmp/chrome-user-data",
-        "--crash-dumps-dir=/tmp/crashes",
-        "--window-size=1920,1080",
-        "--single-process",
-        "--no-zygote",
-        "--enable-logging",
-        "--v=1",
-        "--log-path=/tmp/logs/chrome.log",
+    "--headless=new",
+    "--no-sandbox",
+
+    # Отключаем GPU и ускорение — оставляем софт-рендеринг
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+
+    # Если не монтируете /dev/shm через Docker, то нужно:
+    "--disable-dev-shm-usage",
+
+    # Основной профиль и дампы
+    "--user-data-dir=/tmp/chrome-user-data",
+    "--crash-dumps-dir=/tmp/crashes",
+
+    # Размер окна
+    "--window-size=1920,1080",
+
+    # Отключаем ненужные фичи и фоновую сеть
+    "--disable-background-networking",
+    "--disable-features=VizDisplayCompositor,Accelerated2dCanvas",
+    "--no-first-run",
+    "--no-default-browser-check",
+
+    # Логирование для диагностики
+    "--enable-logging",
+    "--v=1",
+    "--log-path=/tmp/logs/chrome.log",
     ]
     for arg in container_args:
         opts.add_argument(arg)
